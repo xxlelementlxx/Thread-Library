@@ -1,0 +1,208 @@
+#include <cstdlib>
+#include <iostream>
+#include <deque>
+#include <fstream>
+#include <algorithm>
+#include "thread.h"
+#include "interrupt.h"
+
+using namespace std;
+
+struct Request {
+    unsigned int rqstr;
+    int track;
+};
+
+
+
+unsigned int lock = 230, id = 0;
+unsigned int full_cond, open_cond = 2323;
+
+unsigned int max_disk_queue;
+int current_track = 0;
+
+bool* flags;
+deque<Request*> diskq;
+
+int abs(int i)
+{
+    return (i > 0) ? i : -i;
+}
+bool myfunction(Request* i, Request* j) {
+    return (abs(i->track-current_track) < abs(j->track-current_track));
+}
+bool is_full() {
+    return diskq.size() >= max_disk_queue;
+}
+
+void print_q() {
+    cout << current_track << endl;
+    for (unsigned int i = 0; i < diskq.size(); i++) {
+        cout << i << ":" << diskq.at(i)->track << " ";
+    }
+    cout << endl;
+}
+
+void request(Request* r) {
+    cout << "requester " << r->rqstr << " track " << r->track << endl;
+    //    diskq.push(r);
+    diskq.push_back(r);
+    sort(diskq.begin(), diskq.end(), myfunction);
+    flags[r->rqstr] = 1;
+//    print_q();
+}
+
+void service_request(Request* r) {
+    cout << "service requester " << r->rqstr << " track " << r->track << endl;
+    flags[r->rqstr] = 0;
+    current_track = r->track;
+
+    delete r;
+    r = NULL;
+//    print_q();
+}
+
+int get_file_size(const char * fname) {
+    unsigned int size = 0;
+    ifstream in(fname);
+    if (!in) {
+        cout << "Cannot open input file.\n";
+    }
+    char str[255];
+    while (in) {
+        in.getline(str, 255);
+        if (in) {
+            size++;
+        }
+    }
+    in.close();
+    return size;
+}
+
+//Request* get_object() {
+//    queue<Request*>* temq=new queue<Request*>;
+//    unsigned int min_distance=999;
+//    Request* r;
+//    while(!diskq.empty())
+//    {
+//        r = diskq.front();
+//
+////        unsigned int dist=r->track-current_track;
+////        dist=(dist>0)?dist:-dist;
+////
+////        if(dist<=min_distance)
+////        {
+////
+////        }
+//        diskq.pop();
+////        diskq.
+//    }
+//    return r;
+//}
+
+Request* get_object() {
+    Request* r = diskq.front();
+    //    diskq.pop();
+    diskq.pop_front();
+    return r;
+}
+
+void requester(void* fn) {
+    const char * fname = (char*) fn;
+
+    unsigned int tracks[get_file_size(fname)];
+
+    ifstream in(fname);
+
+    if (!in) {
+        cout << "Cannot open input file.\n";
+    }
+
+    char str[255];
+    unsigned int n = 0;
+    while (in) {
+        in.getline(str, 255);
+        if (in) {
+            tracks[n] = atoi(str);
+            //cout << tracks[n] << endl;
+            n++;
+        }
+    }
+    in.close();
+
+    unsigned int requester_id = id;
+    id++;
+
+    for (unsigned int i = 0; i < n; i++) {
+        thread_lock(lock);
+        Request* r = new Request;
+        r->rqstr = requester_id;
+        r->track = tracks[i];
+
+        while (is_full() || flags[r->rqstr] != 0) {
+            thread_wait(lock, open_cond);
+        }
+        //cout << "Q not full" << endl;
+
+
+        request(r);
+
+        thread_unlock(lock);
+        thread_broadcast(lock, full_cond);
+
+
+    }
+    //max_disk_queue--;
+}
+
+void service(void* arg) {
+    while (max_disk_queue > 0) {
+        thread_lock(lock); //obtain lock
+        while (!is_full()) {
+            thread_wait(lock, full_cond);
+            //cout<<thread_wait(lock, full_cond)<<endl;
+        }
+        //queue is full
+
+        //get object off queue
+        Request* r = get_object();
+        //service
+        service_request(r);
+        //unlock
+        thread_unlock(lock);
+        thread_broadcast(lock, open_cond);
+    }
+}
+
+struct args {
+    int argc;
+    char** argv;
+};
+
+void master(void* arg) {
+    args* a = (args*) arg;
+
+    max_disk_queue = atoi(a->argv[1]);
+
+    //Create service thread
+    thread_create(service, arg);
+    //cout << "Service thread: " << thread_create(service, arg) << endl;
+
+    for (unsigned int i = 2; i < a->argc; i++) {
+        void* filename = a->argv[i];
+        thread_create(requester, filename);
+        //cout << "Request thread: " << thread_create(requester, filename) << endl;
+    }
+
+    delete a;
+}
+
+int main(int argc, char** argv) {
+    flags = new bool[argc - 2];
+
+    args* a = new args;
+    a->argc = argc;
+    a->argv = argv;
+    void* arg = a;
+    thread_libinit(&master, arg);
+}
