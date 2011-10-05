@@ -1,10 +1,8 @@
 /*
- * File:   thread.cpp
  * Author: Yang Su
  *
  * Created on February 1, 2011, 10:35 PM
  */
-
 #include <cstdlib>
 #include <ucontext.h>
 #include <deque>
