@@ -1,14 +1,6 @@
-/*
- * File:   app.cpp
- * Author: suyang1
- *
- * Created on February 13, 2011, 11:00 PM
- */
 #include <cstdlib>
 #include <iostream>
 #include "thread.h"
-#include <assert.h>
-
 using namespace std;
 
 int g = 0;

@@ -3,7 +3,6 @@
 #include <deque>
 #include <algorithm>
 #include "thread.h"
-#include "interrupt.h"
 
 using namespace std;
 
@@ -129,7 +128,6 @@ void service(void* arg) {
 }
 
 void master(void* arg) {
-    //start_preemptions(false, true, 2243);
     //Create service thread
     thread_create(service, arg);
     for (unsigned int i = 0; i < 5; i++) {
