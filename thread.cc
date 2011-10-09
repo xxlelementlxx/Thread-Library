@@ -236,15 +236,16 @@ int thread_wait(unsigned int lock, unsigned int cond) {
       }
       waiting_threads->push_back(current);
       condition_map.insert(make_pair(cond, waiting_threads));
-    } else { //Found Condition variable
+    } 
+    else //Found Condition variable
       (*cond_iter).second->push_back(current);
-    }
+
     swapcontext(current->ucontext_ptr, scheduler);
     interrupt_enable();
     return thread_lock(lock);
-  } 
-  else
-    return -1;
+  }
+  interrupt_enable();
+  return -1;
 }
 
 int thread_signal(unsigned int lock, unsigned int cond) {
