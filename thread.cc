@@ -1,13 +1,9 @@
-/*
- * Author: Yang Su
- *
- * Created on February 1, 2011, 10:35 PM
- */
 #include <cstdlib>
 #include <ucontext.h>
 #include <deque>
 #include <iterator>
 #include <map>
+#include <iostream>
 #include "interrupt.h"
 #include "thread.h"
 
@@ -39,7 +35,7 @@ static map<unsigned int, Lock*> lock_map;
 static bool init = false;
 static int id = 0;
 
-void delete_current() {
+void delete_current_thread() {
   delete current->stack;
   current->ucontext_ptr->uc_stack.ss_sp = NULL;
   current->ucontext_ptr->uc_stack.ss_size = 0;
@@ -76,7 +72,7 @@ int thread_libinit(thread_startfunc_t func, void *arg) {
 
   while (ready.size() > 0) {
     if (current->finished == true)
-      delete_current();
+      delete_current_thread();
     Thread* next = ready.front();
     ready.pop_front();
     current = next;
@@ -84,7 +80,7 @@ int thread_libinit(thread_startfunc_t func, void *arg) {
   }
 
   if (current != NULL) {
-    delete_current();
+    delete_current_thread();
   }
 
   //When there are no runnable threads in the system (e.g. all threads have
@@ -107,8 +103,9 @@ int thread_create(thread_startfunc_t func, void *arg) {
   if (!init) return -1;
   
   interrupt_disable();
+  Thread* t;
   try {
-    Thread* t = new Thread;
+    t = new Thread;
     
     t->ucontext_ptr = new ucontext_t;
     getcontext(t->ucontext_ptr);
@@ -143,7 +140,6 @@ int thread_yield(void) {
   ready.push_back(current);
   swapcontext(current->ucontext_ptr, scheduler);
   interrupt_enable();
-
   return 0;
 }
 
@@ -184,61 +180,18 @@ int thread_lock(unsigned int lock) {
     }
   }
   interrupt_enable();
-
   return 0;
 }
 
 int unlock_without_interrupts(unsigned int lock) {
   lock_iterator lock_iter = lock_map.find(lock);
   Lock* l;
-  if (lock_iter == lock_map.end()) {
-    interrupt_enable();
+  if (lock_iter == lock_map.end()) // Lock Not Found, error
     return -1;
-  } 
-  else {
-    l = (*lock_iter).second;
-    if (l->owner == NULL) {
-      interrupt_enable();
-      return -1;
-    } 
-    else {
-      if (l->owner->id == current->id) {
-        //move 1 blocked to owner
-        if (l->blocked_threads->size() > 0) {
-
-          l->owner = l->blocked_threads->front();
-          l->blocked_threads->pop_front();
-          ready.push_back(l->owner);
-        } else {
-          l->owner = NULL;
-        }
-      } 
-      else {
-        interrupt_enable();
-        return -1;
-      }
-    }
-  }
-
-  return 0;
-}
-
-int thread_unlock(unsigned int lock) {
-  if (!init) return -1;
-
-  interrupt_disable();
-  lock_iterator lock_iter = lock_map.find(lock);
-  Lock* l;
-  if (lock_iter == lock_map.end()) { // Lock Not Found, error
-    interrupt_enable();
-    return -1;
-  } 
   else { //Lock Found
     l = (*lock_iter).second;
-    if (l->owner == NULL) { //Lock Free, error
-      interrupt_enable();
+    if (l->owner == NULL) //Lock Free, error
       return -1;
-    } 
     else { //Lock owned
       if (l->owner->id == current->id) { //Current thread owns the lock
         if (l->blocked_threads->size() > 0) {
@@ -249,14 +202,20 @@ int thread_unlock(unsigned int lock) {
         else
           l->owner = NULL;
       }
-      else { //Not the owner, error
-        interrupt_enable();
+      else //Not the owner, error
         return -1;
-      }
     }
   }
-  interrupt_enable();
   return 0;
+}
+
+int thread_unlock(unsigned int lock) {
+  if (!init) return -1;
+
+  interrupt_disable();
+  int result = unlock_without_interrupts(lock);
+  interrupt_enable();
+  return result;
 }
 
 int thread_wait(unsigned int lock, unsigned int cond) {
