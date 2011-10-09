@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <stdio.h>
 #include <iostream>
 #include <deque>
 #include <fstream>
@@ -9,153 +10,110 @@
 using namespace std;
 
 struct Request {
-    unsigned int rqstr;
-    int track;
+  int id;
+  int track;
 };
 
-struct args {
-    int argc;
-    char** argv;
-};
-
-struct file {
-    int id;
-    char* filename;
-};
-
-unsigned int  cout_lock = 230, 
-              id = 0,
-              full_cond = 21341, 
-              open_cond = 2323;
-
-unsigned int max_disk_queue;
-unsigned int active_threads;
-int current_track = 0;
-
-bool* flags;
+int mutex, diskqFull, diskqOpen, diskqLimit, numThreads, lastTrack;
+char** filenames;
+bool* serviced;
 deque<Request*> diskq;
 
 int abs(int i) { return (i > 0) ? i : -i; }
-
 bool sortfunc(Request* i, Request* j) {
-    return (abs(i->track - current_track) < abs(j->track - current_track));
+  return (abs(i->track - lastTrack) < abs(j->track - lastTrack));
+}
+bool isDiskqFull() { return diskq.size() >= diskqLimit; }
+
+void sendRequest(Request* r) {
+  cout << "requester " << r->id << " track " << r->track << endl;
+  diskq.push_back(r);
+  sort(diskq.begin(), diskq.end(), sortfunc);
+  serviced[r->id] = false;
 }
 
-bool is_full() { return diskq.size() >= max_disk_queue; }
-
-void print_q() {
-    //cout << current_track << endl;
-    for (unsigned int i = 0; i < diskq.size(); i++) {
-        cout << i << ":" << diskq.at(i)->track << " ";
-    }
-    cout << endl;
+void serviceRequest() {
+  Request* r = diskq.front();
+  diskq.pop_front();
+  cout << "service requester " << r->id << " track " << r->track << endl;
+  serviced[r->id] = true;
+  lastTrack = r->track;
+  delete r;
 }
 
-Request* get_object() {
-    Request* r = diskq.front();
-    diskq.pop_front();
-    return r;
-}
+void requester(void* id) {
+  int requesterID = (int)id;
+  ifstream in(filenames[requesterID]);
+  int track = 0;
+  Request* r;
+  
+  while (true) {
+    in >> track;
+    if(in.eof()) break;
+    
+    r = new Request;
+    r->id = requesterID;
+    r->track = track;
+    thread_lock(mutex);
+    
+    while (isDiskqFull() || serviced[r->id] == false)
+      thread_wait(mutex, diskqOpen);
 
-void request(Request* r) {
-    cout << "requester " << r->rqstr << " track " << r->track << endl;
-    diskq.push_back(r);
-    //
-    sort(diskq.begin(), diskq.end(), sortfunc);
-    flags[r->rqstr] = false;
-    //print_q() ;
-}
-
-void service_request() {
-    Request* r = get_object();
-    cout << "service requester " << r->rqstr << " track " << r->track << endl;
-    flags[r->rqstr] = true;
-    current_track = r->track;
-}
-
-void requester(void* ff) {
-    file* f = (file*) ff;
-    const char * fname = (char*) f->filename;
-    unsigned int requester_id = f->id;
-    delete f;
-
-    ifstream in(fname);
-
-    char str[255];
-    Request* r;
-    while (in) {
-        in.getline(str, 255);
-        if (in) {
-            r = new Request;
-            r->rqstr = requester_id;
-            r->track = atoi(str);
-
-            thread_lock(cout_lock);
-            while (is_full() || flags[r->rqstr] == false) {
-                thread_wait(cout_lock, open_cond);
-            }
-            request(r);
-
-            thread_broadcast(cout_lock, full_cond);
-        }
-    }
-    in.close();
-
-    while (flags[r->rqstr] == false) {
-        thread_wait(cout_lock, open_cond);
-    }
-    active_threads--;
-
-    if (active_threads < max_disk_queue) {
-        max_disk_queue--;
-        thread_broadcast(cout_lock, full_cond);
-    }
-    thread_unlock(cout_lock);
+    sendRequest(r);
+    thread_broadcast(mutex, diskqFull);
+  }
+  in.close();
+  
+  while (serviced[requesterID] == false)
+    thread_wait(mutex, diskqOpen);
+  
+  numThreads--;
+  if (numThreads < diskqLimit) {
+    diskqLimit--;
+    thread_broadcast(mutex, diskqFull);
+  }
+  thread_unlock(mutex); 
 }
 
 void service(void* arg) {
-    thread_lock(cout_lock); //obtain lock
-    while (max_disk_queue > 0) {
-        while (!is_full()) 
-            thread_wait(cout_lock, full_cond);
-
-        if (!diskq.empty())
-            service_request();
-
-        thread_broadcast(cout_lock, open_cond);
-    }
-    thread_unlock(cout_lock);
+  thread_lock(mutex);
+  while (diskqLimit > 0) {
+    while (!isDiskqFull()) 
+      thread_wait(mutex, diskqFull);
+  
+    if (!diskq.empty())
+      serviceRequest();
+  
+    thread_broadcast(mutex, diskqOpen);
+  }
+  thread_unlock(mutex);
 }
 
 void master(void* arg) {
-    start_preemptions(false, true, 1);
-    args* a = (args*) arg;
+  thread_create(service, NULL);
 
-    max_disk_queue = atoi(a->argv[1]);
-    active_threads = a->argc - 2;
-
-    //Create service thread
-    thread_create(service, arg);
-
-    for (unsigned int i = 2; i < a->argc; i++) {
-        file* f = new file;
-        f->id = id;
-        f->filename = a->argv[i];
-        id++;
-        void* ff = f;
-        thread_create(requester, ff);
-    }
-    delete a;
+  for (int i = 0; i < numThreads; i++)
+    thread_create(requester, (void*)i);
 }
 
 int main(int argc, char** argv) {
-    flags = new bool[argc - 2];
-    for (unsigned int i = 0; i < (argc - 2); i++)
-        flags[i] = true;
+  if (argc <= 2) 
+    return 0;
+  
+  diskqLimit = atoi(argv[1]);
+  numThreads = argc - 2;
+  lastTrack = 0;
+  mutex = 1;
+  diskqFull = 2;
+  diskqOpen = 3;
 
-    args* a = new args;
-    a->argc = argc;
-    a->argv = argv;
-    void* arg = a;
-    thread_libinit(&master, arg);
+  serviced = new bool[numThreads];
+  for (int i = 0; i < numThreads; i++)
+    serviced[i] = true;
+
+  filenames = argv + 2;
+  thread_libinit(&master, NULL);
+  
+  delete serviced;
+  return 0;
 }
