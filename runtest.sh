@@ -1,11 +1,12 @@
 #!/bin/sh
 diff="diff.txt"
+OLD="old"
+NEW="new"
+
 cp tests/* .
 cp disk-scheduler/* .
 cp lib/* .
 
-OLD="old"
-NEW="new"
 mkdir $OLD $NEW
 
 test() {
@@ -31,13 +32,14 @@ test() {
 test $OLD $OLD
 test "" $NEW
 
-echo "Comparing output..."
 touch $diff
 diff new old > $diff
+
+echo "Diff:"
+more $diff
+
+echo "Clean up"
 rm test*.o test*.cpp threadold.cc thread.a threadold.a
 rm disk.* diskold.*
 rm interrupt.h libinterrupt.a
 rm -r $OLD $NEW
-echo "Clean up"
-more $diff
-echo "Results:"
