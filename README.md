@@ -1,5 +1,5 @@
-## Thread Library
-### Programming Interface
+## Thread Library ([Detailed Specification](http://www.cs.duke.edu/~chase/cps110/projects/1/project1.txt))
+### Programming Interface 
 This is a C++ thread library designed to allow for writing multi-threaded programs on a linux machine.
 
     int thread_libinit(thread_startfunc_t func, void *arg)
@@ -37,7 +37,6 @@ Here is a list of behaviors that are **NOT** considered errors:
 - a thread that exits while still holding a lock (the thread should
 keep the lock)
 
----
 ## Disk Scheduler
 
 The disk scheduler is sample program that simulates how an operating system gets and schedules disk I/Os for multiple threads. Threads issue disk requests by queueing them at the disk scheduler.
@@ -48,10 +47,7 @@ Requests in the disk queue are NOT serviced in FIFO order but instead in **SSTF*
 
 The service thread keeps the disk queue as full as possible to minimize average seek distance and only handles a request when the disk queue has the largest possible number of requests.
 
----
 ## Running tests (On a linux machine)
 
     ./runtests.sh
 
----
-[Detailed Specification](http://www.cs.duke.edu/~chase/cps110/projects/1/project1.txt)
