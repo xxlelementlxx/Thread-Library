@@ -1,6 +1,6 @@
 # Thread Library ([Detailed Specification](http://www.cs.duke.edu/~chase/cps110/projects/1/project1.txt))
+A C++ thread library designed to allow for writing multi-threaded programs on linux machines
 ## Programming Interface 
-This is a C++ thread library designed to allow for writing multi-threaded programs on a linux machine.
 
     int thread_libinit(thread_startfunc_t func, void *arg)
 
